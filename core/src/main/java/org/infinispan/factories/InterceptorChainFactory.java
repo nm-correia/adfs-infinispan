@@ -25,6 +25,9 @@ import org.infinispan.transaction.TransactionMode;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 
+// ADFS interceptor import
+import org.infinispan.interceptors.ADFS.ADFSInterceptor;
+
 import java.util.List;
 
 /**
@@ -265,6 +268,12 @@ public class InterceptorChainFactory extends AbstractNamedCacheComponentFactory 
       interceptorChain.appendInterceptor(callInterceptor, false);
       log.trace("Finished building default interceptor chain.");
       buildCustomInterceptors(interceptorChain, configuration.customInterceptors());
+      
+      // Add the ADFS interceptor to the chain. Ugly way, but the only one for now.
+      ADFSInterceptor adfsi = new ADFSInterceptor();
+      register(adfsi.getClass(), adfsi);
+      interceptorChain.addInterceptorBefore(adfsi, CallInterceptor.class, true);
+      
       return interceptorChain;
    }
 

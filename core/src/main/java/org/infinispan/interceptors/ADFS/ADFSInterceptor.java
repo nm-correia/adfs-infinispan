@@ -72,30 +72,32 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
       LOG.warnf("ADFS interceptor starting up for: "
                     + this.cache.getAdvancedCache().getName());
       
-      this.myAddress = this.cache.getAdvancedCache().getRpcManager().getAddress();
-      this.adfsCache = (Cache<byte[], byte[]>)this.cache;
-      this.m = new GenericJBossMarshaller();
-      
-      // Read properties file
-      Properties p = readPropertiesFile(PROPERTIES_FILENAME);
-      if(p == null)
-            LOG.errorf("property file not found in the classpath");
-      
-      // Build the filesystem
-      this.fs = buildFilesystem(p);
-      if(fs == null)
-            LOG.errorf("filesystem specified in properties file not supported yet");
-      
-      // Other properties
-      this.contentMaxSize = Integer.parseInt(p.getProperty(PROP_CONTENT_MAX_SIZE));
-      this.checkerTimestep = Integer.parseInt(p.getProperty(PROP_CHECK_TIMESTEP));
-      
-      // Build the dist computation platform
-      this.distProc = new ADFSDistProcessing(p, fs, adfsCache, m, checkerTimestep);
-      
-      //BLABLE
-      try { this.nullVal = m.objectToByteBuffer(null); }
-      catch (Exception e) { e.printStackTrace(); }
+      if(this.cache.getAdvancedCache().getName().compareTo("ADFS") == 0) {
+          this.myAddress = this.cache.getAdvancedCache().getRpcManager().getAddress();
+          this.adfsCache = (Cache<byte[], byte[]>)this.cache;
+          this.m = new GenericJBossMarshaller();
+          
+          // Read properties file
+          Properties p = readPropertiesFile(PROPERTIES_FILENAME);
+          if(p == null)
+                LOG.errorf("property file not found in the classpath");
+          
+          // Build the filesystem
+          this.fs = buildFilesystem(p);
+          if(fs == null)
+                LOG.errorf("filesystem specified in properties file not supported yet");
+          
+          // Other properties
+          this.contentMaxSize = Integer.parseInt(p.getProperty(PROP_CONTENT_MAX_SIZE));
+          this.checkerTimestep = Integer.parseInt(p.getProperty(PROP_CHECK_TIMESTEP));
+          
+          // Build the dist computation platform
+          this.distProc = new ADFSDistProcessing(p, fs, adfsCache, m, checkerTimestep);
+          
+          //BLABLE
+          try { this.nullVal = m.objectToByteBuffer(null); }
+          catch (Exception e) { e.printStackTrace(); }
+      }
       
    }
    

@@ -24,15 +24,11 @@ import adfs.core.ADFSActiveFileMeta;
 import adfs.core.ADFSFile;
 import adfs.core.ADFSFileMeta;
 
-public class ADFSDistProcessing implements Runnable {
+public class ADFSDistProcessing {
 	
 	//spark-submit --class org.apache.spark.examples.SrkPi --master yarn-cluster --conf spark.yarn.jar=hdfs://192.168.1.201/computations/spark/lib/spark-assembly-1.1.0-hadoop2.4.0.jar hdfs://192.168.1.201/computations/spark/scala/spark-examples.jar 4
 	
 	private static final String PROP_TMPDIR = "projects_dir";
-	private static final String PROP_SPARK_RUN = "spark_run";
-	private static final String PROP_SPARK_MASTER = "spark_master";
-	private static final String PROP_SPARK_JAR = "spark_jar";
-	private static final String PROP_HADOOP_RUN = "hadoop_run";
 	
 	private static final String SPARK_S = "spark";
 	private static final String HADOOP_S = "hadoop";
@@ -40,27 +36,28 @@ public class ADFSDistProcessing implements Runnable {
 	private ADFSDistFSI fs;
 	private Cache<byte[], byte[]> adfsCache;
 	private Marshaller m;
-	private Map<String, Process> compProcs;
+	//private Map<String, Process> compProcs;
 	private byte[] nullVal;
-	private int checkerTimestep;
+	//private int checkerTimestep;
+	
+	private ADFSSpark sparkProc;
+	//private ADFSSpark hadoopProc;
 
 	
 	private static final Log LOG = LogFactory.getLog(ADFSDistProcessing.class);
 	
 	// TODO Different classes in the future
-	private String sparkRun, hadoopRun;
-	private String sparkMaster;
-	private String sparkJar;
-	
 	private String tmpDir;
 	
-	public ADFSDistProcessing(Properties p, ADFSDistFSI f,
+	
+	public ADFSDistProcessing(Properties p, ADFSDistFSI fs,
 			Cache<byte[], byte[]> c, Marshaller m, int checkerTimestep) {
-		this.fs = f;
+		
+		this.fs = fs;
 		this.adfsCache = c;
 		this.m = m;
-		this.checkerTimestep = checkerTimestep;
-		this.compProcs = new HashMap<String, Process>();
+		//this.checkerTimestep = checkerTimestep;
+		//this.compProcs = new HashMap<String, Process>();
 	    
 		//BLABLE
 	    try { this.nullVal = m.objectToByteBuffer(null); }
@@ -68,13 +65,10 @@ public class ADFSDistProcessing implements Runnable {
 		
 		// Other properties
 		this.tmpDir = p.getProperty(PROP_TMPDIR);
-		this.sparkRun = p.getProperty(PROP_SPARK_RUN);
-		this.sparkMaster = p.getProperty(PROP_SPARK_MASTER);
-		this.hadoopRun = p.getProperty(PROP_HADOOP_RUN);
-		this.sparkJar = p.getProperty(PROP_SPARK_JAR);
 		
 		//blabla
-		(new Thread(this)).start();
+		this.sparkProc = new ADFSSpark(p, fs);
+		this.sparkProc.initFramework();
 	}
 	
 	
@@ -174,17 +168,13 @@ public class ADFSDistProcessing implements Runnable {
 		String commandLine;
 		
 		// Spark
-		if(framework.compareToIgnoreCase(SPARK_S) == 0)			
-			commandLine = sparkRun + " " + computationArgs +
+		if(framework.compareToIgnoreCase(SPARK_S) == 0)
+			/*commandLine = sparkRun + " " + computationArgs +
 					" " + "--master " + sparkMaster +
 					" " + "--conf spark.yarn.jar=" + fs_url + sparkJar +
 					" " + fs_url + project + " " + projectArgs +
-					" " + srcFiles + " " + fs_url + hiddenOutput;
-		// Hadoop
-		else if(framework.compareToIgnoreCase(HADOOP_S) == 0)
-			commandLine = hadoopRun + " " + computationArgs +
-					" " + tmpDir + projectName + " " + projectArgs + " " + srcFiles +
-					" " + fs_url + hiddenOutput;
+					" " + srcFiles + " " + fs_url + hiddenOutput;*/
+			;
 		else
 			throw new IOException("Framework not supported");
 		
@@ -195,9 +185,9 @@ public class ADFSDistProcessing implements Runnable {
 		//fs.copyToLocal(project, tmpDir);
 		//(new File(tmpDir + projectName)).delete();
 		
-		LOG.warnf("CMDLINE: " + commandLine);
-		Process proc = Runtime.getRuntime().exec(commandLine);
-		compProcs.put(af.getName(), proc); // delay the process
+		//LOG.warnf("CMDLINE: " + commandLine);
+		//Process proc = Runtime.getRuntime().exec(commandLine);
+		//compProcs.put(af.getName(), proc); // delay the process
 	}
 	
 	
@@ -217,7 +207,7 @@ public class ADFSDistProcessing implements Runnable {
 	}
 
 	
-	private void checkCompletedProcesses()
+/*	private void checkCompletedProcesses()
 			throws IOException, InterruptedException, ClassNotFoundException {
 		
 		synchronized(compProcs) {
@@ -290,6 +280,6 @@ public class ADFSDistProcessing implements Runnable {
             }
             
         } catch(Exception e) { e.printStackTrace(); }	
-	}
+	}*/
 
 }

@@ -34,8 +34,8 @@ public class ADFSHDFS implements ADFSDistFSI {
 	}
 	
 	@Override
-	public void copyToLocal(String src, String dst) {		
-		try { hdfs.copyToLocalFile(new Path(src), new Path(dst)); }
+	public void copyToLocal(String src, String dst) {
+		try { hdfs.copyToLocalFile(false, new Path(src), new Path(dst), true); }
 		catch(Exception e) { e.printStackTrace(); }
 	}
 	

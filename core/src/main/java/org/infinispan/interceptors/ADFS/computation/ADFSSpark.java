@@ -2,11 +2,14 @@ package org.infinispan.interceptors.ADFS.computation;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Map;
 import java.util.Properties;
 
 import org.apache.commons.io.FileUtils;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
+
+import adfs.core.ADFSActiveFileMeta;
 
 public class ADFSSpark {
 
@@ -26,9 +29,10 @@ public class ADFSSpark {
 	private ADFSSparkThread[] shellPool;
 	private ADFSDistFSI fs;
 	private String tmpDir;
+	private Map<String, Boolean> procs;
 	
 	
-	public ADFSSpark(Properties p, ADFSDistFSI fs) {
+	public ADFSSpark(Properties p, ADFSDistFSI fs, Map<String, Boolean> procs) {
 		this.sparkShell = p.getProperty(PROP_SPARK_SHELL);
 		this.sparkMaster = p.getProperty(PROP_SPARK_MASTER);
 		//this.sparkJar = p.getProperty(PROP_SPARK_JAR);
@@ -37,6 +41,7 @@ public class ADFSSpark {
 		
 		this.tmpDir = p.getProperty(PROP_TMPDIR);
 		this.fs = fs;
+		this.procs = procs;
 	}
 	
 	
@@ -65,14 +70,25 @@ public class ADFSSpark {
 				Process sparkShell;
 				sparkShell = Runtime.getRuntime().exec(initSparkShellCmdl);
 				
-				this.shellPool[i] = new ADFSSparkThread(sparkShell);
-				this.shellPool[i].start();
+				this.shellPool[i] = new ADFSSparkThread(sparkShell, fs.getUrl(), procs);
+				new Thread(this.shellPool[i]).start();
 			}
 		
 		} catch (Exception e) { e.printStackTrace(); }
 	}
 	
 	
-	public void execDistProcessing(String cmd) {}
-	
+	public void execDistProcessing(ADFSActiveFileMeta af) {
+		// TODO check if is python or jar 
+		
+		for(int i = 0; i < 1; i++) { // TODO
+			if(!this.shellPool[i].isBusy()) {
+				this.shellPool[i].setActiveFile(af);
+				new Thread(this.shellPool[i]).start();
+				break; // TODO not found
+			}
+		}
+		
+	}
+
 }

@@ -24,7 +24,7 @@ import adfs.core.ADFSActiveFileMeta;
 import adfs.core.ADFSFile;
 import adfs.core.ADFSFileMeta;
 
-public class ADFSDistProcessing {
+public class ADFSDistProcessing implements Runnable {
 	
 	//spark-submit --class org.apache.spark.examples.SrkPi --master yarn-cluster --conf spark.yarn.jar=hdfs://192.168.1.201/computations/spark/lib/spark-assembly-1.1.0-hadoop2.4.0.jar hdfs://192.168.1.201/computations/spark/scala/spark-examples.jar 4
 	
@@ -36,18 +36,15 @@ public class ADFSDistProcessing {
 	private ADFSDistFSI fs;
 	private Cache<byte[], byte[]> adfsCache;
 	private Marshaller m;
-	//private Map<String, Process> compProcs;
+	private Map<String, Boolean> compProcs;
 	private byte[] nullVal;
-	//private int checkerTimestep;
+	private int checkerTimestep;
+	private String tmpDir;
 	
 	private ADFSSpark sparkProc;
 	//private ADFSSpark hadoopProc;
 
-	
 	private static final Log LOG = LogFactory.getLog(ADFSDistProcessing.class);
-	
-	// TODO Different classes in the future
-	private String tmpDir;
 	
 	
 	public ADFSDistProcessing(Properties p, ADFSDistFSI fs,
@@ -56,8 +53,8 @@ public class ADFSDistProcessing {
 		this.fs = fs;
 		this.adfsCache = c;
 		this.m = m;
-		//this.checkerTimestep = checkerTimestep;
-		//this.compProcs = new HashMap<String, Process>();
+		this.checkerTimestep = checkerTimestep;
+		this.compProcs = new HashMap<String, Boolean>();
 	    
 		//BLABLE
 	    try { this.nullVal = m.objectToByteBuffer(null); }
@@ -66,9 +63,12 @@ public class ADFSDistProcessing {
 		// Other properties
 		this.tmpDir = p.getProperty(PROP_TMPDIR);
 		
-		//blabla
-		this.sparkProc = new ADFSSpark(p, fs);
+		//blabla Spark
+		this.sparkProc = new ADFSSpark(p, fs, compProcs);
 		this.sparkProc.initFramework();
+		
+		//blabla
+		(new Thread(this)).start();
 	}
 	
 	
@@ -148,46 +148,16 @@ public class ADFSDistProcessing {
 			throws InterruptedException, IOException, URISyntaxException {
 		
 		String framework = af.getFramework();
-		String project = af.getProject();
-		String projectArgs = af.getProjectArgs();
-		String computationArgs = af.getComputationArgs();
-		
-		String filename = Paths.get(af.getName()).getFileName().toString();
-		String hiddenOutput = Paths.get(af.getName()).getParent() + "/." + filename;
-		
-		String fs_url = fs.getUrl();
-		String projectName = Paths.get(project).getFileName().toString();
-		
-		String srcFiles = "";
-		for(String srcF: af.getSrcFiles())
-			srcFiles += fs_url + srcF + ",";
-		
-		if(srcFiles.compareTo("") != 0)
-			srcFiles = srcFiles.substring(0, srcFiles.length()-1);
-		
-		String commandLine;
 		
 		// Spark
-		if(framework.compareToIgnoreCase(SPARK_S) == 0)
-			/*commandLine = sparkRun + " " + computationArgs +
-					" " + "--master " + sparkMaster +
-					" " + "--conf spark.yarn.jar=" + fs_url + sparkJar +
-					" " + fs_url + project + " " + projectArgs +
-					" " + srcFiles + " " + fs_url + hiddenOutput;*/
-			;
+		if(framework.compareToIgnoreCase(SPARK_S) == 0) {
+			// mark the file
+			// TODO synchronized?
+			compProcs.put(af.getName(), true);
+			this.sparkProc.execDistProcessing(af);
+		}
 		else
 			throw new IOException("Framework not supported");
-		
-		// remove the previous result if any
-		// TODO rmFile
-		//fs.rmDir(af.getName());
-		
-		//fs.copyToLocal(project, tmpDir);
-		//(new File(tmpDir + projectName)).delete();
-		
-		//LOG.warnf("CMDLINE: " + commandLine);
-		//Process proc = Runtime.getRuntime().exec(commandLine);
-		//compProcs.put(af.getName(), proc); // delay the process
 	}
 	
 	
@@ -207,15 +177,14 @@ public class ADFSDistProcessing {
 	}
 
 	
-/*	private void checkCompletedProcesses()
+	private void checkCompletedProcesses()
 			throws IOException, InterruptedException, ClassNotFoundException {
 		
 		synchronized(compProcs) {
 			
-			for(Entry<String, Process> entry: compProcs.entrySet()) { // iterator??
+			for(Entry<String, Boolean> entry: compProcs.entrySet()) { // iterator??
 
-				try { entry.getValue().exitValue(); } // Check exit value?
-				catch(IllegalThreadStateException e) { continue; } // skip active file
+				if(entry.getValue()) continue;
 				
 				LOG.warnf("COMPUTATION COMPLETED: " + entry.getKey());
 				
@@ -280,6 +249,6 @@ public class ADFSDistProcessing {
             }
             
         } catch(Exception e) { e.printStackTrace(); }	
-	}*/
+	}
 
 }

@@ -26,12 +26,8 @@ import adfs.core.ADFSFileMeta;
 
 public class ADFSDistProcessing implements Runnable {
 	
-	//spark-submit --class org.apache.spark.examples.SrkPi --master yarn-cluster --conf spark.yarn.jar=hdfs://192.168.1.201/computations/spark/lib/spark-assembly-1.1.0-hadoop2.4.0.jar hdfs://192.168.1.201/computations/spark/scala/spark-examples.jar 4
-	
-	private static final String PROP_TMPDIR = "projects_dir";
-	
 	private static final String SPARK_S = "spark";
-	private static final String HADOOP_S = "hadoop";
+	//private static final String HADOOP_S = "hadoop";
 	
 	private ADFSDistFSI fs;
 	private Cache<byte[], byte[]> adfsCache;
@@ -39,7 +35,6 @@ public class ADFSDistProcessing implements Runnable {
 	private Map<String, Boolean> compProcs;
 	private byte[] nullVal;
 	private int checkerTimestep;
-	private String tmpDir;
 	
 	private ADFSSpark sparkProc;
 	//private ADFSSpark hadoopProc;
@@ -60,15 +55,14 @@ public class ADFSDistProcessing implements Runnable {
 	    try { this.nullVal = m.objectToByteBuffer(null); }
 	    catch (Exception e) { e.printStackTrace(); }
 		
-		// Other properties
-		this.tmpDir = p.getProperty(PROP_TMPDIR);
-		
 		//blabla Spark
-		this.sparkProc = new ADFSSpark(p, fs, compProcs);
+		this.sparkProc = new ADFSSpark(p, fs, this);
 		this.sparkProc.initFramework();
 		
-		//blabla
-		(new Thread(this)).start();
+		//TODO blabla Hadoop
+		
+		// No need now with spark shell
+		//(new Thread(this)).start();
 	}
 	
 	
@@ -148,16 +142,24 @@ public class ADFSDistProcessing implements Runnable {
 			throws InterruptedException, IOException, URISyntaxException {
 		
 		String framework = af.getFramework();
+		switch(framework) {
 		
-		// Spark
-		if(framework.compareToIgnoreCase(SPARK_S) == 0) {
-			// mark the file
-			// TODO synchronized?
-			compProcs.put(af.getName(), true);
-			this.sparkProc.execDistProcessing(af);
+			// Spark
+			case SPARK_S:
+				// mark the file
+				// TODO synchronized? -> NOT NEEDED NOW WITH SHELL
+				//compProcs.put(af.getName(), true);
+				if(!this.sparkProc.execDistProcessing(af))
+					throw new IOException("Spark exec error. All shells busy?");
+			break;
+			
+			// TODO Hadoop
+			
+			// Not supported
+			default:
+				throw new IOException("Framework not supported");
+			//break;
 		}
-		else
-			throw new IOException("Framework not supported");
 	}
 	
 	
@@ -175,60 +177,62 @@ public class ADFSDistProcessing implements Runnable {
 		} catch (Exception e) { e.printStackTrace(); }
 
 	}
+	
+	
+	// blabla
+	public void completeComputation(String afName)
+			throws IOException, InterruptedException, ClassNotFoundException {
+		
+		String afMetaKey = ADFSFile.ATTR_PREFIX + afName;
+		byte[] afMetaKeyVal = m.objectToByteBuffer(afMetaKey);
+		byte[] afMetaVal = adfsCache.get(afMetaKeyVal);
+		ADFSActiveFileMeta afMeta = afMetaVal == null ?
+		        null : (ADFSActiveFileMeta)m.objectFromByteBuffer(afMetaVal);
+		
+		// MUST EXIST
+		//if(afMetaVal != null) {
+		
+		String filename = Paths.get(afMeta.getName()).getFileName().toString();
+		String hiddenOutput = Paths.get(afMeta.getName()).getParent() + "/." + filename;
+			
+		// Check if final result is a directory
+		if(fs.isDir(hiddenOutput)) {
+			fs.mergeDir(hiddenOutput, hiddenOutput + "_done");
+			//fs.rmDir(hiddenOutput);
+			
+			fs.rm(afMeta.getName()); // the previous file
+			fs.mv(hiddenOutput + "_done", afMeta.getName());
+		}
+		else {
+			fs.rm(afMeta.getName()); // the previous file
+			fs.mv(hiddenOutput, afMeta.getName());
+		}
+		
+		afMeta.setAvailability(true);
+		afMeta.setStale(false);
+		
+		afMetaVal = m.objectToByteBuffer(afMeta);
+		adfsCache.put(afMetaKeyVal, afMetaVal);
+		
+		// New cache content
+		byte[] afContentKeyVal = m.objectToByteBuffer(afName);
+		adfsCache.remove(afContentKeyVal);
+		adfsCache.put(afContentKeyVal, nullVal);
+		
+		// blabl
+		releaseSrcFiles(afMeta);
+	}
 
 	
 	private void checkCompletedProcesses()
 			throws IOException, InterruptedException, ClassNotFoundException {
 		
 		synchronized(compProcs) {
-			
-			for(Entry<String, Boolean> entry: compProcs.entrySet()) { // iterator??
-
+			for(Entry<String, Boolean> entry: compProcs.entrySet()) {
 				if(entry.getValue()) continue;
 				
 				LOG.warnf("COMPUTATION COMPLETED: " + entry.getKey());
-				
-				String afMetaKey = ADFSFile.ATTR_PREFIX + entry.getKey();
-				byte[] afMetaKeyVal = m.objectToByteBuffer(afMetaKey);
-				byte[] afMetaVal = adfsCache.get(afMetaKeyVal);
-				ADFSActiveFileMeta afMeta = afMetaVal == null ?
-				        null : (ADFSActiveFileMeta)m.objectFromByteBuffer(afMetaVal);
-				
-				// MUST EXIST
-				//if(afMetaVal != null) {
-				
-				String filename = Paths.get(afMeta.getName()).getFileName().toString();
-				String hiddenOutput = Paths.get(afMeta.getName()).getParent() + "/." + filename;
-					
-					// Check if final result is a directory
-					if(fs.isDir(hiddenOutput)) {
-						fs.mergeDir(hiddenOutput, hiddenOutput + "_done");
-						//fs.rmDir(hiddenOutput);
-						
-						fs.rm(afMeta.getName()); // the previous file
-						fs.mv(hiddenOutput + "_done", afMeta.getName());
-					}
-					else {
-						fs.rm(afMeta.getName()); // the previous file
-						fs.mv(hiddenOutput, afMeta.getName());
-					}
-					
-					afMeta.setAvailability(true);
-					afMeta.setStale(false);
-					
-					afMetaVal = m.objectToByteBuffer(afMeta);
-					adfsCache.put(afMetaKeyVal, afMetaVal);
-					
-					// New cache content
-					byte[] afContentKeyVal = m.objectToByteBuffer(entry.getKey());
-					adfsCache.remove(afContentKeyVal);
-					adfsCache.put(afContentKeyVal, nullVal);
-				//}
-				
-				// blabl
-				releaseSrcFiles(afMeta);
-				
-				// blabla
+				completeComputation(entry.getKey());
 				compProcs.remove(entry.getKey());
 			}
 		}
@@ -237,17 +241,12 @@ public class ADFSDistProcessing implements Runnable {
 	// BLABLA
 	@Override
 	public void run() {
-        // run every 30 seconds...
-        //final long timeToSleep = 30000;
-
         try {
-        	
             while(true) {
-                // wait for a bit, before checking for complete processes
+                // wait for a bit, before checking for completed computations
                 Thread.sleep(checkerTimestep);
                 checkCompletedProcesses();
             }
-            
         } catch(Exception e) { e.printStackTrace(); }	
 	}
 

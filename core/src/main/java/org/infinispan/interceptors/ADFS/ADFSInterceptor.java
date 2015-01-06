@@ -34,7 +34,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
     private static final String PROP_CONTENT_MAX_SIZE = "content_max_size";
     private static final String PROP_CHECK_TIMESTEP = "checker_timestep";
     
-    private static final String PROP_FILESYSTEM = "filesystem";
+    private static final String PROP_FILESYSTEM = "store_system";
     private static final String PROP_TMPDIR = "projects_dir";
     private static final String HDFS_S = "hdfs";
     //private static final String CASSANDRA_S = "cassandra";

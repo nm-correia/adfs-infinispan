@@ -2,10 +2,11 @@ package org.infinispan.interceptors.ADFS.computation;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Map;
+import java.nio.file.Paths;
 import java.util.Properties;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 
@@ -13,82 +14,115 @@ import adfs.core.ADFSActiveFileMeta;
 
 public class ADFSSpark {
 
-	private static final String ADFS_COMPS_DIR = "computations";
-	private static final String ADFS_ABS_COMPS_DIR = "/adfs/computations";
+	private static final String PROP_REMOTE_COMPS_DIR = "remote_projects_dir";
+	private static final String PROP_TMPDIR = "local_projects_dir";
 	
-	private static final String PROP_SPARK_SHELL = "spark_shell";
 	private static final String PROP_SPARK_MASTER = "spark_master";
-	private static final String PROP_SPARK_JAR = "spark_jar";
-	private static final String PROP_SPARK_CORES = "spark_exec_cores";
-	private static final String PROP_TMPDIR = "projects_dir";
+	private static final String PROP_SPARK_CORES = "spark_exec_total_cores";
+	private static final String PROP_SPARK_MEM = "spark_exec_node_mem";
+	
+	private static final String PROP_SPARK_SCALA_SHELL = "spark_scala_shell";
+	private static final String PROP_SPARK_SCALA_POOLSIZE =
+			"spark_scala_shell_poolsize";
+
 	
 	private static final Log LOG = LogFactory.getLog(ADFSSpark.class);
 	
-	private String sparkShell, sparkMaster, sparkJar;
-	private int execCores;
-	private ADFSSparkThread[] shellPool;
+	
+	private String sparkScalaShell, sparkMaster;
+	private int execTotalCores;
+	private String execNodeMem;
+	private int scalaShellSize;
+	private ADFSSparkScalaShellRunnable[] scalaShellPool;
 	private ADFSDistFSI fs;
 	private String tmpDir;
-	private Map<String, Boolean> procs;
+	private ADFSDistProcessing dp;
+	private String adfsProjRemoteDir;
 	
 	
-	public ADFSSpark(Properties p, ADFSDistFSI fs, Map<String, Boolean> procs) {
-		this.sparkShell = p.getProperty(PROP_SPARK_SHELL);
+	public ADFSSpark(Properties p, ADFSDistFSI fs, ADFSDistProcessing dp) {
 		this.sparkMaster = p.getProperty(PROP_SPARK_MASTER);
-		//this.sparkJar = p.getProperty(PROP_SPARK_JAR);
-		this.execCores = Integer.parseInt(p.getProperty(PROP_SPARK_CORES));
-		this.shellPool = new ADFSSparkThread[1]; // TODO arg to prop filename
+		this.execTotalCores = Integer.parseInt(p.getProperty(PROP_SPARK_CORES));
+		this.execNodeMem = p.getProperty(PROP_SPARK_MEM);
+		
+		this.sparkScalaShell = p.getProperty(PROP_SPARK_SCALA_SHELL);
+		this.scalaShellSize = Integer.parseInt(p.getProperty(PROP_SPARK_SCALA_POOLSIZE));
+		this.scalaShellPool = new ADFSSparkScalaShellRunnable[scalaShellSize];
 		
 		this.tmpDir = p.getProperty(PROP_TMPDIR);
+		this.adfsProjRemoteDir = p.getProperty(PROP_REMOTE_COMPS_DIR);
+		
 		this.fs = fs;
-		this.procs = procs;
+		this.dp = dp;
 	}
 	
 	
+	// BLABLA
 	public void initFramework() {
-		String compJars = "";
+		// Initialize the scala and java shell
+		initScalaShell();
 		
-		File compsDir = new File(tmpDir + ADFS_COMPS_DIR);
-		
+		//TODO init python shell
+	}
+	
+	
+	// BLABLA
+	private void initScalaShell() {
+		String projDir = Paths.get(adfsProjRemoteDir).getFileName().toString();
+		File compsDir = new File(tmpDir + projDir);
 		if(compsDir.exists()) {
 			try { FileUtils.deleteDirectory(compsDir); }
 			catch (IOException e1) { e1.printStackTrace(); }
 		}
 		
-		fs.copyToLocal(ADFS_ABS_COMPS_DIR, tmpDir);
-		
+		String compJars = "";
+		fs.copyToLocal(adfsProjRemoteDir, tmpDir);
 		for(File comp: compsDir.listFiles())
 			compJars += comp.getAbsolutePath() + ",";
 		
 		try {
-			String initSparkShellCmdl = sparkShell + " --master " + sparkMaster +
-								" " + "--jars " + compJars +
-								" " + "--total-executor-cores " + execCores;
+			String initSparkShellCmdl = sparkScalaShell + " --master " + sparkMaster +
+								" --jars " + compJars +
+								" --total-executor-cores " + execTotalCores +
+								" --executor-memory " + execNodeMem;
 			LOG.warnf("INIT SPARK SHELL COMMAND: " + initSparkShellCmdl);
 			
-			for(int i = 0; i < 1; i++) { // TODO
+			for(int i = 0; i < scalaShellSize; i++) {
 				Process sparkShell;
 				sparkShell = Runtime.getRuntime().exec(initSparkShellCmdl);
-				
-				this.shellPool[i] = new ADFSSparkThread(sparkShell, fs.getUrl(), procs);
-				new Thread(this.shellPool[i]).start();
+				this.scalaShellPool[i] =
+						new ADFSSparkScalaShellRunnable(sparkShell, fs.getUrl(), dp);
 			}
 		
 		} catch (Exception e) { e.printStackTrace(); }
 	}
 	
 	
-	public void execDistProcessing(ADFSActiveFileMeta af) {
-		// TODO check if is python or jar 
+	// BLABLA
+	public boolean execDistProcessing(ADFSActiveFileMeta af) {
+		String projExtension = FilenameUtils.getExtension(af.getProject());
 		
-		for(int i = 0; i < 1; i++) { // TODO
-			if(!this.shellPool[i].isBusy()) {
-				this.shellPool[i].setActiveFile(af);
-				new Thread(this.shellPool[i]).start();
-				break; // TODO not found
-			}
+		boolean ret = false;
+		switch(projExtension) {
+		
+			// Scala and Java projects
+			case "jar":
+				for(int i = 0; i < scalaShellSize; i++)
+					if(!this.scalaShellPool[i].isBusy()) {
+						this.scalaShellPool[i].procActiveFile(af);
+						ret = true;
+						break;
+					}
+			break;
+			
+			// Python projects
+			case "py":
+				// TODO
+				ret = true;
+			break;
 		}
 		
+		return ret;
 	}
 
 }

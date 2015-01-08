@@ -75,7 +75,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 					initShell += new String(charBuffer, 0, n);
 				} while(!initShell.endsWith(SCALA_PROMPT));
 				
-				LOG.warnf("INIT SHELL:\n" + initShell + "\nBYTES READ: " + n);
+				LOG.warnf("INIT SHELL:\n" + initShell);
 				LOG.warnf("spark shell now available!");
 				
 				// Write import to shell
@@ -90,7 +90,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 					importRet += new String(charBuffer, 0, n);
 				} while(!importRet.endsWith(SCALA_PROMPT));
 				
-				LOG.warnf("IMPORTS:\n" + importRet + "\nBYTES READ: " + n);
+				LOG.warnf("IMPORTS:\n" + importRet);
 				LOG.warnf("imports completed!");
 				
 				this.started = true;
@@ -109,14 +109,17 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 			
 			// Build proc args
 			String afProjArgs = "";
-			if(!af.getProjectArgs().isEmpty())
-				for(String arg: af.getProjectArgs().split(" "))
-					afProjArgs += "\"" + arg + "\"" + ",";
+			if(af.getProjectArgs() != null)
+				if(!af.getProjectArgs().isEmpty())
+					for(String arg: af.getProjectArgs().split(" "))
+						afProjArgs += "\"" + arg + "\"" + ",";
 			
 			// Build src files TODO just one string
-			String srcFiles = "";
+			String srcFiles = "\"";
 			for(String srcF: af.getSrcFiles())
-				srcFiles += "\"" + fsURL + srcF + "\"" + ",";
+				srcFiles += fsURL + srcF + ",";
+			srcFiles.substring(0, srcFiles.length()-1);
+			srcFiles = srcFiles.substring(0, srcFiles.length()-1) + "\",";
 			
 			// Hidden output
 			String filename = Paths.get(af.getName()).getFileName().toString();
@@ -144,6 +147,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 				
 				// Finally, we complete the file computation and kill the thread
 				dp.completeComputation(af.getName());
+				LOG.warnf("EXEC:\n" + compRet);
 				LOG.warnf("PROC done! Spark shell is now available!");
 
 			} catch (Exception e) { e.printStackTrace(); }

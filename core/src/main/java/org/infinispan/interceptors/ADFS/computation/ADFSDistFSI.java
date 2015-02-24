@@ -9,6 +9,7 @@ public interface ADFSDistFSI {
 	public byte[] getContent(String path);
 	public long getFileSize(String path);
 	public String getUrl();
+	public String[] listDirFiles(String path);
 	
 	public void mergeDir(String srcDir, String dstFile);
 	public void copyToLocal(String src, String dst);

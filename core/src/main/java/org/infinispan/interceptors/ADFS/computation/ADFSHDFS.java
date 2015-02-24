@@ -4,6 +4,7 @@ import java.net.URI;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
@@ -99,6 +100,21 @@ public class ADFSHDFS implements ADFSDistFSI {
 		try { return hdfs.getFileStatus(new Path(path)).getLen(); }
 		catch(Exception e) { e.printStackTrace(); }
 		return -1;
+	}
+	
+	@Override
+	public String[] listDirFiles(String path) {
+		try {
+			FileStatus[] files = hdfs.listStatus(new Path(path));
+			String[] fileDirs = new String[files.length];
+			
+			for(int i = 0; i < files.length; i++)
+				fileDirs[i] = files[i].getPath().toString();
+			
+			return fileDirs;
+			
+		} catch(Exception e) { e.printStackTrace(); }
+		return null;
 	}
 	
 }

@@ -28,7 +28,13 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 	
 	// Channels to write and read from the spark shell process
 	private Process sparkShell;
+	
+	private InputStream is;
+	private InputStream es;
+	private OutputStream os;
+	
 	private BufferedReader br;
+	private BufferedReader bre;
 	private BufferedWriter bw;
 	
 	// ADFSDistProcess object to complete computation
@@ -46,11 +52,14 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 		
 		this.sparkShell = sparkShell;
 		
-		InputStream is = sparkShell.getInputStream();
+		this.is = sparkShell.getInputStream();
 		this.br = new BufferedReader(new InputStreamReader(is));
 		
-		OutputStream os = sparkShell.getOutputStream();
+		this.os = sparkShell.getOutputStream();
 		this.bw = new BufferedWriter(new OutputStreamWriter(os));
+		
+		this.es = sparkShell.getErrorStream();
+		this.bre = new BufferedReader(new InputStreamReader(es));
 		
 		// Launch shell
 		new Thread(this).start();
@@ -63,7 +72,8 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 		this.busy = true;
 		
 		char[] charBuffer = new char[READ_BUFFER_SIZE];
-		int n;
+		char[] charBufferErr = new char[READ_BUFFER_SIZE];
+		int n, nErr;
 		
 		// Launch shell (in a different thread??)
 		if(!this.started) {
@@ -75,7 +85,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 					initShell += new String(charBuffer, 0, n);
 				} while(!initShell.endsWith(SCALA_PROMPT));
 				
-				LOG.warnf("INIT SHELL:\n" + initShell + "\nBYTES READ: " + n);
+				LOG.warnf("INIT SHELL:\n" + initShell);
 				LOG.warnf("spark shell now available!");
 				
 				// Write import to shell
@@ -90,7 +100,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 					importRet += new String(charBuffer, 0, n);
 				} while(!importRet.endsWith(SCALA_PROMPT));
 				
-				LOG.warnf("IMPORTS:\n" + importRet + "\nBYTES READ: " + n);
+				LOG.warnf("IMPORTS:\n" + importRet);
 				LOG.warnf("imports completed!");
 				
 				this.started = true;
@@ -109,14 +119,17 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 			
 			// Build proc args
 			String afProjArgs = "";
-			if(!af.getProjectArgs().isEmpty())
-				for(String arg: af.getProjectArgs().split(" "))
-					afProjArgs += "\"" + arg + "\"" + ",";
+			if(af.getProjectArgs() != null)
+				if(!af.getProjectArgs().isEmpty())
+					for(String arg: af.getProjectArgs().split(" "))
+						afProjArgs += "\"" + arg + "\"" + ",";
 			
 			// Build src files TODO just one string
-			String srcFiles = "";
+			String srcFiles = "\"";
 			for(String srcF: af.getSrcFiles())
-				srcFiles += "\"" + fsURL + srcF + "\"" + ",";
+				srcFiles += fsURL + srcF + ",";
+			srcFiles.substring(0, srcFiles.length()-1);
+			srcFiles = srcFiles.substring(0, srcFiles.length()-1) + "\",";
 			
 			// Hidden output
 			String filename = Paths.get(af.getName()).getFileName().toString();
@@ -134,16 +147,25 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 			try {
 				bw.write(execProc);
 				bw.flush();
-			
+
 				// 3rd we read the result until we find the scala prompt
 				String compRet = "";
 				do {
-					n = br.read(charBuffer);
-					compRet += new String(charBuffer, 0, n);
+					
+					// Otherwise computations are not done, dont know why
+					if(es.available() > 0)
+						nErr = bre.read(charBufferErr);
+					
+					if(is.available() > 0) {
+						n = br.read(charBuffer);
+						compRet += new String(charBuffer, 0, n);
+					}
+					
 				} while(!compRet.endsWith(SCALA_PROMPT));
 				
 				// Finally, we complete the file computation and kill the thread
 				dp.completeComputation(af.getName());
+				LOG.warnf("EXEC:\n" + compRet);
 				LOG.warnf("PROC done! Spark shell is now available!");
 
 			} catch (Exception e) { e.printStackTrace(); }

@@ -1,14 +1,6 @@
 package org.infinispan.interceptors.ADFS.computation;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
-
-/*import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;*/
-
-
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +18,7 @@ import adfs.core.ADFSFileMeta;
 
 public class ADFSDistProcessing implements Runnable {
 	
+    private static final String PROP_CHECK_TIMESTEP = "checker_timestep";
 	private static final String SPARK_S = "spark";
 	//private static final String HADOOP_S = "hadoop";
 	
@@ -43,12 +36,12 @@ public class ADFSDistProcessing implements Runnable {
 	
 	
 	public ADFSDistProcessing(Properties p, ADFSDistFSI fs,
-			Cache<byte[], byte[]> c, Marshaller m, int checkerTimestep) {
+			Cache<byte[], byte[]> c, Marshaller m) {
 		
 		this.fs = fs;
 		this.adfsCache = c;
 		this.m = m;
-		this.checkerTimestep = checkerTimestep;
+		this.checkerTimestep = Integer.parseInt(p.getProperty(PROP_CHECK_TIMESTEP));
 		this.compProcs = new HashMap<String, Boolean>();
 	    
 		//BLABLE
@@ -66,8 +59,9 @@ public class ADFSDistProcessing implements Runnable {
 	}
 	
 	
-	// TODO check if src file is an active file that is computing
-	// content == null?????
+	// TODO check for in progress active files (new meta field: inProgress)
+	// TODO multiple prepares, the first release releases the files, must implement a counter
+	// semaphore
 	private void prepareSrcFiles(ADFSActiveFileMeta afMeta)
 			throws IOException, InterruptedException, ClassNotFoundException {
 
@@ -79,19 +73,20 @@ public class ADFSDistProcessing implements Runnable {
                     null : (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
             
             if(srcMeta == null) {
-                // TODO check if exist in the fs
-                adfsCache.put(srcMetaKeyVal, nullVal);
-                srcMetaVal = adfsCache.get(srcMetaKeyVal);
-                srcMeta = (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            	if(!fs.isFile(srcFile)) {
+            		LOG.errorf("File does not exist: " + srcFile);
+            		continue;
+            	}
+            	else {
+            		adfsCache.put(srcMetaKeyVal, nullVal);
+                    srcMetaVal = adfsCache.get(srcMetaKeyVal);
+                    srcMeta = (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            	}
             }
             
-            /*if(scrMeta == null) {
-             * LOG.errorf(SRC FILE: " + srcFile + " DOES NOT EXISTS");
-                return invokeNextInterceptor(ctx, cmd);
-            }*/
-            
-            //blabla
-            srcMeta.setAvailability(false); // BLOCK ACCESS TO SOURCE FILES
+            // TODO counter inc
+            // BLOCK ACCESS TO SOURCE FILES
+            srcMeta.setAvailability(false);
             
             srcMetaVal = m.objectToByteBuffer(srcMeta);
             adfsCache.put(srcMetaKeyVal, srcMetaVal);
@@ -117,16 +112,16 @@ public class ADFSDistProcessing implements Runnable {
                     null : (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
             
             if(srcMeta == null) {
-                // TODO check if exist in the fs
-                adfsCache.put(srcMetaKeyVal, nullVal);
-                srcMetaVal = adfsCache.get(srcMetaKeyVal);
-                srcMeta = (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            	if(!fs.isFile(srcFile)) {
+            		LOG.errorf("File does not exist: " + srcFile);
+            		continue;
+            	}
+            	else {
+            		adfsCache.put(srcMetaKeyVal, nullVal);
+                    srcMetaVal = adfsCache.get(srcMetaKeyVal);
+                    srcMeta = (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            	}
             }
-            
-            /*if(scrMeta == null) {
-             * LOG.errorf(SRC FILE: " + srcFile + " DOES NOT EXISTS");
-                return invokeNextInterceptor(ctx, cmd);
-            }*/
 
             //blabla
             srcMeta.setAvailability(true);
@@ -138,43 +133,50 @@ public class ADFSDistProcessing implements Runnable {
 	}
 	
 	
-	private void execDistComputation(ADFSActiveFileMeta af)
-			throws InterruptedException, IOException, URISyntaxException {
+	private boolean execDistComputation(ADFSActiveFileMeta af) {
 		
+		boolean ret = false;
 		String framework = af.getFramework();
 		switch(framework) {
 		
 			// Spark
 			case SPARK_S:
 				// mark the file
-				// TODO synchronized? -> NOT NEEDED NOW WITH SHELL
-				//compProcs.put(af.getName(), true);
-				if(!this.sparkProc.execDistProcessing(af))
-					throw new IOException("Spark exec error. All shells busy?");
+				//synchronized(compProcs) {compProcs.put(af.getName(), true);}
+				try {
+					if(!this.sparkProc.execDistProcessing(af)) {
+						releaseSrcFiles(af);
+						LOG.errorf("Spark exec error. All shells busy?");
+					} else ret = true;
+				} catch(Exception e) { e.printStackTrace(); }
 			break;
 			
-			// TODO Hadoop
+			// TODO case HADOOP_S:
 			
 			// Not supported
 			default:
-				throw new IOException("Framework not supported");
-			//break;
+				LOG.errorf("Framework not supported");
+			break;
 		}
+		return ret;
 	}
 	
 	
 	// BLEBLE
 	// Active files associated were already mark as stale
-	public void processActiveFile(ADFSActiveFileMeta afMeta) {
+	public boolean processActiveFile(ADFSActiveFileMeta afMeta) {
 		
 		try {
 			//blabla
 			prepareSrcFiles(afMeta);
 			
 			// Launch the computation in background
-			execDistComputation(afMeta);
+			return execDistComputation(afMeta);
 
-		} catch (Exception e) { e.printStackTrace(); }
+		} catch (Exception e) {
+			e.printStackTrace();
+			return false;
+		}
 
 	}
 	
@@ -189,8 +191,7 @@ public class ADFSDistProcessing implements Runnable {
 		ADFSActiveFileMeta afMeta = afMetaVal == null ?
 		        null : (ADFSActiveFileMeta)m.objectFromByteBuffer(afMetaVal);
 		
-		// MUST EXIST
-		//if(afMetaVal != null) {
+		// FILE MUST EXIST, no need to check
 		
 		String filename = Paths.get(afMeta.getName()).getFileName().toString();
 		String hiddenOutput = Paths.get(afMeta.getName()).getParent() + "/." + filename;
@@ -198,8 +199,6 @@ public class ADFSDistProcessing implements Runnable {
 		// Check if final result is a directory
 		if(fs.isDir(hiddenOutput)) {
 			fs.mergeDir(hiddenOutput, hiddenOutput + "_done");
-			//fs.rmDir(hiddenOutput);
-			
 			fs.rm(afMeta.getName()); // the previous file
 			fs.mv(hiddenOutput + "_done", afMeta.getName());
 		}
@@ -209,10 +208,14 @@ public class ADFSDistProcessing implements Runnable {
 		}
 		
 		afMeta.setAvailability(true);
-		afMeta.setStale(false);
+		afMeta.updateTime();
+		afMeta.setCompute(false);
 		
 		afMetaVal = m.objectToByteBuffer(afMeta);
 		adfsCache.put(afMetaKeyVal, afMetaVal);
+		
+		// TODO update all the active files that are using this active file
+		// how? i don't know :)
 		
 		// New cache content
 		byte[] afContentKeyVal = m.objectToByteBuffer(afName);
@@ -221,6 +224,45 @@ public class ADFSDistProcessing implements Runnable {
 		
 		// blabl
 		releaseSrcFiles(afMeta);
+	}
+	
+	
+	public boolean checkActiveSrcFiles(ADFSActiveFileMeta afMeta)
+			throws IOException, InterruptedException, ClassNotFoundException {
+		
+		boolean ret = true;
+		
+		for(String srcFile: afMeta.getSrcFiles()) {			
+			String srcMetaKey = ADFSFile.ATTR_PREFIX + srcFile;
+            byte[] srcMetaKeyVal = m.objectToByteBuffer(srcMetaKey);
+            byte[] srcMetaVal = adfsCache.get(srcMetaKeyVal);
+            ADFSFileMeta srcMeta = srcMetaVal == null ?
+                    null : (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            
+            if(srcMeta == null) {
+            	if(!fs.isFile(srcFile)) {
+            		LOG.errorf("File does not exist: " + srcFile);
+            		continue;
+            	}
+            	else {
+            		adfsCache.put(srcMetaKeyVal, nullVal);
+                    srcMetaVal = adfsCache.get(srcMetaKeyVal);
+                    srcMeta = (ADFSFileMeta)m.objectFromByteBuffer(srcMetaVal);
+            	}
+            }
+            
+            if(srcMeta.isActive()) {
+            	ADFSActiveFileMeta aSrcMeta = (ADFSActiveFileMeta) srcMeta;
+            	if(aSrcMeta.isStale() && aSrcMeta.isAvailable()) {
+            		// Launch the execution
+            		adfsCache.get(m.objectToByteBuffer(srcFile));
+            		// TODO must be null
+            		ret = false;
+            	}
+            }
+		}
+		
+		return ret;
 	}
 
 	

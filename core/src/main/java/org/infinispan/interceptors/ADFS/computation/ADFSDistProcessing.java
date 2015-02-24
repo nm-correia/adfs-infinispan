@@ -208,7 +208,8 @@ public class ADFSDistProcessing implements Runnable {
 		}
 		
 		afMeta.setAvailability(true);
-		afMeta.setStale(false);
+		afMeta.updateTime();
+		afMeta.setCompute(false);
 		
 		afMetaVal = m.objectToByteBuffer(afMeta);
 		adfsCache.put(afMetaKeyVal, afMetaVal);

@@ -256,8 +256,11 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                                       activefMetaVal = adfsCache.get(activefMetaKeyVal);
                                       activefMeta = (ADFSActiveFileMeta)m.objectFromByteBuffer(activefMetaVal);
                                   }
-                            	  
-                                  activefMeta.setStale(true);
+                                  
+                                  // TODO assoc dir if not present to active file too
+                                  
+                                  if(!activefMeta.setSrcWriteTime(dir, afMeta.getTime()))
+                                	  LOG.errorf("SRC DIR: " + dir + " not present in this af!");
                                   
                                   activefMetaVal = m.objectToByteBuffer(activefMeta);
                                   adfsCache.put(activefMetaKeyVal, activefMetaVal);
@@ -307,12 +310,12 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                     aafMeta.setProjectArgs(configProps.getProperty(PROP_PROJECT_ARGS));
                     aafMeta.setComputationArgs(configProps.getProperty(PROP_PROCESSING_ARGS));
                     
+                    String[] srcFiles = new String[0];
                     if(configProps.getProperty(PROP_INPUTFILES).compareTo("") != 0)
-                        for(String f: configProps.getProperty(PROP_INPUTFILES).split(" "))
-                            aafMeta.assocSrcFile(f);
+                    	srcFiles = configProps.getProperty(PROP_INPUTFILES).split(" ");
                                
                     // Associate active file to the source files
-            		for(String srcFile: aafMeta.getSrcFiles()) {			
+            		for(String srcFile: srcFiles) {
             			String srcMetaKey = ADFSFile.ATTR_PREFIX + srcFile;
                         byte[] srcMetaKeyVal = m.objectToByteBuffer(srcMetaKey);
                         byte[] srcMetaVal = adfsCache.get(srcMetaKeyVal);
@@ -337,6 +340,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                         // in put mod.
                         
                         //blabla
+                        aafMeta.assocSrcFile(srcFile, srcMeta.getTime());
                         srcMeta.assocActiveFile(aafMeta.getName());
                         
                         srcMetaVal = m.objectToByteBuffer(srcMeta);
@@ -408,7 +412,44 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                   if(aMeta.isActive()) {
                 	  ADFSActiveFileMeta oldMeta = (ADFSActiveFileMeta)aMeta;
                 	  ADFSActiveFileMeta newMeta = (ADFSActiveFileMeta)value;
-                	  if(!oldMeta.isStale() && newMeta.isStale()) {
+                	  
+                	  if((!oldMeta.isStale() && newMeta.isStale()) ||
+                			  (newMeta.isStale() && newMeta.toCompute())) {
+
+                		  // First we exec the proc if necessary
+                		  if(newMeta.isWorthItProcess()) {
+                              LOG.warnf("IS WORTH PROCESS IT: " + newMeta.getName());
+                			  
+                			  // even if the active file is stale, we still need to check
+                        	  // the states of the source files, may be still stale and
+                			  // we have to force the computation
+                        	  // distProc.checkActiveSrcFiles does that
+                			  
+                			  // We need to lauch lazy computations that must be computed before
+                			  // this one, if they are lazy
+                              // TODO UGLY COMPENSATE ASYNC PUT from sources
+                              Thread.sleep(500);
+                        	  boolean actSrcsRet = distProc.checkActiveSrcFiles(newMeta);
+                			  
+                        	  // If all the sources are not stale we can launch the computation
+                        	  if(actSrcsRet) {
+	                            // lancar a computacao em background
+	                        	  boolean ret = distProc.processActiveFile(newMeta);
+	                        	  
+	                        	  if(ret) {
+	                        		  newMeta.setAvailability(false);
+	                        		  cmd.setValue(m.objectToByteBuffer(newMeta));	                        		  
+	                        	  }
+	                        	  else
+	                        		  LOG.errorf("Computation failed");
+                        	  }
+                        	  else
+                        		  LOG.errorf("There are still computations to be done!");
+                          }
+                		  
+                		  // Second we update the assoc active files
+                		  String aMetaName = aMeta.getName();
+                		  long newTime = newMeta.lastSrcWriteTime();
                 		  
                 		  // Put all the assoc active files stale - recursive...
                 		  for(String asocActFile: newMeta.getAssocActiveFiles()) {			
@@ -430,35 +471,43 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                 	            	}
                 	            }
                 	            
-                	            if(!assocMeta.isStale()) {
-	                	            assocMeta.setStale(true);
-	                	            adfsCache.put(assocMetaKeyVal, m.objectToByteBuffer(assocMeta));
-                	            }
+                	            // Mod file entrance in every active file associated
+                	            if(!assocMeta.setSrcWriteTime(aMetaName, newTime))
+                              	  LOG.errorf("SRC FILE: " + aMetaName + " not present in this af!");
+                	            else
+                	            	adfsCache.putAsync(assocMetaKeyVal, m.objectToByteBuffer(assocMeta));
                 		  }
+                	  }
+                	  
+                	  // After processing...
+                	  else if(oldMeta.isStale() && !newMeta.isStale()) {
                 		  
-                		  if(newMeta.isWorthItProcess()) {
-                              //LOG.warnf("ACTIVE FILE WILL BE COMPUTED, SRC FILES: ");
-                			  
-                			  // even if the active file is stale, we still need to check
-                        	  // the states of the source files, may be still stale and
-                			  // we have to force the computation
-                        	  // distProc.checkActiveSrcFiles does that
-                        	  boolean actSrcsRet = distProc.checkActiveSrcFiles(newMeta);
-                			  
-                        	  if(actSrcsRet) {
-	                            // lancar a computacao em background
-	                        	  boolean ret = distProc.processActiveFile(newMeta);
-	                        	  
-	                        	  if(ret) {
-	                        		  newMeta.setAvailability(false);
-	                        		  cmd.setValue(m.objectToByteBuffer(newMeta));
-	                        	  }
-	                        	  else
-	                        		  LOG.errorf("Computation failed");
-                        	  }
-                        	  else
-                        		  LOG.errorf("There are still computations to be done!");
-                          }
+                		// Update all the assoc active files
+                		  for(String asocActFile: newMeta.getAssocActiveFiles()) {			
+                				String assocMetaKey = ADFSFile.ATTR_PREFIX + asocActFile;
+                	            byte[] assocMetaKeyVal = m.objectToByteBuffer(assocMetaKey);
+                	            byte[] assocMetaVal = adfsCache.get(assocMetaKeyVal);
+                	            ADFSActiveFileMeta assocMeta = assocMetaVal == null ?
+                	                    null : (ADFSActiveFileMeta)m.objectFromByteBuffer(assocMetaVal);
+                	            
+                	            if(assocMeta == null) {
+                	            	if(!fs.isFile(asocActFile)) {
+                	            		LOG.errorf("File does not exist: " + asocActFile);
+                	            		continue;
+                	            	}
+                	            	else {
+                	            		adfsCache.put(assocMetaKeyVal, nullVal);
+                	            		assocMetaVal = adfsCache.get(assocMetaKeyVal);
+                	            		assocMeta = (ADFSActiveFileMeta)m.objectFromByteBuffer(assocMetaVal);
+                	            	}
+                	            }
+                	            
+                	            // Mod file entrance in every active file associated
+                	            if(!assocMeta.setSrcWriteTime(newMeta.getName(), newMeta.getTime()))
+                              	  LOG.errorf("SRC FILE: " + newMeta.getName() + " not present in this af!");
+                	            else
+                	            	adfsCache.putAsync(assocMetaKeyVal, m.objectToByteBuffer(assocMeta));
+                		  }
                 	  }
                   }
                   
@@ -516,6 +565,12 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                       
                       allAssocActFiles.addAll(fatherMeta.getAssocActiveFiles());
                   }
+                  
+                  // Update meta
+                  aMeta.updateTime();
+                  String aMetaName = aMeta.getName();
+        		  long newTime = aMeta.getTime();
+        		  adfsCache.put(aMetaKeyVal, m.objectToByteBuffer(aMeta));
                 
                   // Update all active files that are using this file
                   for(String afs: allAssocActFiles) {
@@ -539,11 +594,15 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                       }*/
                       
                       af.incWrites();
-                      af.setStale(true);
+                      
+                      if(!af.setSrcWriteTime(aMetaName, newTime))
+                      	  LOG.errorf("SRC FILE: " + aMetaName + " not present in this af!");
+
                       afValue = m.objectToByteBuffer(af);
                       
                       adfsCache.put(afKey, afValue);
                   }
+
               }
           }
       }
@@ -591,6 +650,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                   
                   ADFSActiveFileMeta aaMeta = (ADFSActiveFileMeta)aMeta;
                   aaMeta.incReads();
+                  aaMeta.setCompute(true);
                   boolean retSucc = true;
                   
                 // se o ficheiro estiver stale e se valer a pena:
@@ -612,12 +672,12 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                     	  if(ret)
                     		  aaMeta.setAvailability(false);
                     	  else {
-                    		  LOG.errorf("Computation failed");
+                    		  LOG.warnf("Computation failed");
                     		  retSucc = false;
                     	  }
                 	  }
                 	  else {
-                		  LOG.errorf("There are still computations to be done!");
+                		  LOG.warnf("There are still computations to be done!");
                 		  retSucc = false;
                 	  }
                       
@@ -696,10 +756,11 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                   boolean disasRet = afMeta.disassocSrcFile(key);
                   //LOG.warnf("RM: disassociate: " + afs + " from: " + key + " = " + disasRet);
                   if(disasRet) {
-                      afMeta.setStale(true);
-                      afMetaVal = m.objectToByteBuffer(afMeta);
+                	  // TODO
+                      //afMeta.setStale(true);
+                      //afMetaVal = m.objectToByteBuffer(afMeta);
                       
-                      adfsCache.put(afMetaKeyVal, afMetaVal);
+                      //adfsCache.put(afMetaKeyVal, afMetaVal);
                   }           
               }
               

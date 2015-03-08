@@ -33,6 +33,8 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
     // Some string constants
     private static final String PROPERTIES_FILENAME = "ADFSInterceptor.properties";
     private static final String PROP_CONTENT_MAX_SIZE = "content_max_size";
+    private static final String PROP_PROC_MAX_TIME = "proc_max_time";
+    private static final String PROP_PROC_MAX_SIZE = "proc_max_size";
     
     private static final String PROP_FILESYSTEM = "store_system";
     private static final String HDFS_S = "hdfs";
@@ -53,6 +55,12 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
    private ADFSDistProcessing distProc;
    // blabla
    private int contentMaxSize;
+   
+   private long procMaxTime;
+   
+   private long procSrcMaxSize;
+   
+   
    // blabla
    private ADFSDistFSI fs;
    
@@ -86,6 +94,8 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
           
           // Other properties
           this.contentMaxSize = Integer.parseInt(p.getProperty(PROP_CONTENT_MAX_SIZE));
+          this.procMaxTime = Long.parseLong(p.getProperty(PROP_PROC_MAX_TIME));
+          this.procSrcMaxSize = Long.parseLong(p.getProperty(PROP_PROC_MAX_SIZE));
           
           // Build the dist computation platform
           this.distProc = new ADFSDistProcessing(p, fs, adfsCache, m);
@@ -340,7 +350,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                         // in put mod.
                         
                         //blabla
-                        aafMeta.assocSrcFile(srcFile, srcMeta.getTime());
+                        aafMeta.assocSrcFile(srcFile);
                         srcMeta.assocActiveFile(aafMeta.getName());
                         
                         srcMetaVal = m.objectToByteBuffer(srcMeta);
@@ -413,11 +423,15 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                 	  ADFSActiveFileMeta oldMeta = (ADFSActiveFileMeta)aMeta;
                 	  ADFSActiveFileMeta newMeta = (ADFSActiveFileMeta)value;
                 	  
-                	  if((!oldMeta.isStale() && newMeta.isStale()) ||
+                	  if(newMeta.isStale() ||
                 			  (newMeta.isStale() && newMeta.toCompute())) {
-
+                		  
+                		  System.out.println(newMeta.getAvgProcTime());
                 		  // First we exec the proc if necessary
-                		  if(newMeta.isWorthItProcess()) {
+                		  // TODO total src files size is superior to X no need to compute
+                		  if(newMeta.isWorthItProcess() &&
+                				  newMeta.getAvgProcTime() < procMaxTime) {
+                		  
                               LOG.warnf("IS WORTH PROCESS IT: " + newMeta.getName());
                 			  
                 			  // even if the active file is stale, we still need to check
@@ -431,7 +445,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
                               Thread.sleep(500);
                         	  boolean actSrcsRet = distProc.checkActiveSrcFiles(newMeta);
                 			  
-                        	  // If all the sources are not stale we can launch the computation
+                        	  // If all the sources are not stale and available we can launch the computation
                         	  if(actSrcsRet) {
 	                            // lancar a computacao em background
 	                        	  boolean ret = distProc.processActiveFile(newMeta);

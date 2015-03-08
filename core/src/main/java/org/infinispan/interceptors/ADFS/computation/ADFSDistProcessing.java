@@ -182,7 +182,7 @@ public class ADFSDistProcessing implements Runnable {
 	
 	
 	// blabla
-	public void completeComputation(String afName)
+	public void completeComputation(String afName, long time)
 			throws IOException, InterruptedException, ClassNotFoundException {
 		
 		String afMetaKey = ADFSFile.ATTR_PREFIX + afName;
@@ -210,6 +210,7 @@ public class ADFSDistProcessing implements Runnable {
 		afMeta.setAvailability(true);
 		afMeta.updateTime();
 		afMeta.setCompute(false);
+		afMeta.newProc(time);
 		
 		afMetaVal = m.objectToByteBuffer(afMeta);
 		adfsCache.put(afMetaKeyVal, afMetaVal);
@@ -260,6 +261,10 @@ public class ADFSDistProcessing implements Runnable {
             		ret = false;
             	}
             }
+            
+            // Maybe not to improve concurrency
+            if(!srcMeta.isAvailable())
+            	ret = false;
 		}
 		
 		return ret;
@@ -274,7 +279,7 @@ public class ADFSDistProcessing implements Runnable {
 				if(entry.getValue()) continue;
 				
 				LOG.warnf("COMPUTATION COMPLETED: " + entry.getKey());
-				completeComputation(entry.getKey());
+				completeComputation(entry.getKey(), 0); // TODO
 				compProcs.remove(entry.getKey());
 			}
 		}

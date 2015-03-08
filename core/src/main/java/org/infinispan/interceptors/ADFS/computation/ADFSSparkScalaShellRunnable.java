@@ -147,6 +147,7 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 			try {
 				bw.write(execProc);
 				bw.flush();
+				long t1 = System.currentTimeMillis();
 
 				// 3rd we read the result until we find the scala prompt
 				String compRet = "";
@@ -163,8 +164,10 @@ public class ADFSSparkScalaShellRunnable implements Runnable {
 					
 				} while(!compRet.endsWith(SCALA_PROMPT));
 				
+				long t2 = System.currentTimeMillis();
+				
 				// Finally, we complete the file computation and kill the thread
-				dp.completeComputation(af.getName());
+				dp.completeComputation(af.getName(), t2-t1);
 				LOG.warnf("EXEC:\n" + compRet);
 				LOG.warnf("PROC done! Spark shell is now available!");
 

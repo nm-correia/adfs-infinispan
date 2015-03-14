@@ -9,6 +9,7 @@ import java.util.Properties;
 
 import org.infinispan.Cache;
 import org.infinispan.commons.marshall.Marshaller;
+import org.infinispan.interceptors.ADFS.storage.ADFSFSI;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 
@@ -22,7 +23,7 @@ public class ADFSDistProcessing implements Runnable {
 	private static final String SPARK_S = "spark";
 	//private static final String HADOOP_S = "hadoop";
 	
-	private ADFSDistFSI fs;
+	private ADFSFSI fs;
 	private Cache<byte[], byte[]> adfsCache;
 	private Marshaller m;
 	private Map<String, Boolean> compProcs;
@@ -35,7 +36,7 @@ public class ADFSDistProcessing implements Runnable {
 	private static final Log LOG = LogFactory.getLog(ADFSDistProcessing.class);
 	
 	
-	public ADFSDistProcessing(Properties p, ADFSDistFSI fs,
+	public ADFSDistProcessing(Properties p, ADFSFSI fs,
 			Cache<byte[], byte[]> c, Marshaller m) {
 		
 		this.fs = fs;

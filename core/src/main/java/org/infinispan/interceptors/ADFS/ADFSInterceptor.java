@@ -15,8 +15,8 @@ import org.infinispan.commons.marshall.jboss.GenericJBossMarshaller;
 import org.infinispan.container.entries.CacheEntry;
 import org.infinispan.context.InvocationContext;
 import org.infinispan.interceptors.ADFS.computation.ADFSDistProcessing;
-import org.infinispan.interceptors.ADFS.computation.ADFSDistFSI;
-import org.infinispan.interceptors.ADFS.computation.ADFSHDFS;
+import org.infinispan.interceptors.ADFS.storage.ADFSFSI;
+import org.infinispan.interceptors.ADFS.storage.ADFSHDFS;
 import org.infinispan.interceptors.base.BaseCustomInterceptor;
 import org.infinispan.remoting.transport.Address;
 import org.infinispan.util.logging.Log;
@@ -62,7 +62,7 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
    
    
    // blabla
-   private ADFSDistFSI fs;
+   private ADFSFSI fs;
    
    private byte[] nullVal;   
    
@@ -124,9 +124,9 @@ public class ADFSInterceptor extends BaseCustomInterceptor {
    }
    
    // bla bla
-   private ADFSDistFSI buildFilesystem(Properties p) {
+   private ADFSFSI buildFilesystem(Properties p) {
         String fsString = p.getProperty(PROP_FILESYSTEM);
-        ADFSDistFSI fs;
+        ADFSFSI fs;
        
         if(fsString.compareToIgnoreCase(HDFS_S) == 0) {
             String hdfs_url = p.getProperty(PROP_HDFS_URL);

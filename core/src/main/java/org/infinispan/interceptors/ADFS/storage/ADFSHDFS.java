@@ -1,4 +1,4 @@
-package org.infinispan.interceptors.ADFS.computation;
+package org.infinispan.interceptors.ADFS.storage;
 
 import java.net.URI;
 
@@ -9,7 +9,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 
-public class ADFSHDFS implements ADFSDistFSI {
+public class ADFSHDFS implements ADFSFSI {
 	
 	private FileSystem hdfs;
 	private String hdfs_url;

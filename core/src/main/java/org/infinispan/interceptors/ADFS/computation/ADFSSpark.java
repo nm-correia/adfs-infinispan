@@ -7,6 +7,7 @@ import java.util.Properties;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.infinispan.interceptors.ADFS.storage.ADFSFSI;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 
@@ -34,13 +35,13 @@ public class ADFSSpark {
 	private String execNodeMem;
 	private int scalaShellSize;
 	private ADFSSparkScalaShellRunnable[] scalaShellPool;
-	private ADFSDistFSI fs;
+	private ADFSFSI fs;
 	private String tmpDir;
 	private ADFSDistProcessing dp;
 	private String adfsProjRemoteDir;
 	
 	
-	public ADFSSpark(Properties p, ADFSDistFSI fs, ADFSDistProcessing dp) {
+	public ADFSSpark(Properties p, ADFSFSI fs, ADFSDistProcessing dp) {
 		this.sparkMaster = p.getProperty(PROP_SPARK_MASTER);
 		this.execTotalCores = Integer.parseInt(p.getProperty(PROP_SPARK_CORES));
 		this.execNodeMem = p.getProperty(PROP_SPARK_MEM);

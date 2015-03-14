@@ -1,6 +1,6 @@
-package org.infinispan.interceptors.ADFS.computation;
+package org.infinispan.interceptors.ADFS.storage;
 
-public interface ADFSDistFSI {
+public interface ADFSFSI extends ADFSStorageI {
 	
 	public void rm(String path);
 	public void mv(String src, String dst);
